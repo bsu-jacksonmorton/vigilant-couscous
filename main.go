@@ -15,8 +15,11 @@ const (
 	WINDOW_LIMIT_RIGHT float64 = 206
 	IDLE                       = 0
 	WALKING                    = 1
+	ATTACKING                  = 2
+	JUMPING                    = 3
 	FACE_LEFT                  = -1
 	FACE_RIGHT                 = 1
+	ZOMBIE_DEAD                = 2
 )
 
 var (
@@ -27,140 +30,187 @@ var (
 	direction       int
 )
 
-type Zombie struct {
-	state     int
-	frame     float32
-	direction float64
-	posX      float64
-	posY      float64
+type Actor struct {
+	direction  int
+	frameCount float64
+	state      int
 }
 
-func (p *Zombie) SetState(state int) {
-	p.state = state
+func (a *Actor) SetState(state int) {
+	a.state = state
 }
-func (p *Zombie) IncrementFrameCounter() {
-	p.frame = p.frame + 0.2
+func (a *Actor) SetDirection(direction int) {
+	a.direction = direction
 }
-func (p *Zombie) SetDirection(direction float64) {
-	p.direction = direction
+func (a *Actor) SetFrameCount(fc float64) {
+	a.frameCount = fc
 }
-func (p *Zombie) SetPosX(posX float64) {
-	p.posX = posX
+
+type Position struct {
+	posX float64
+	posY float64
 }
-func (p *Zombie) SetPosY(posY float64) {
-	p.posY = posY
+
+func (p *Position) Move(x, y float64) {
+	p.posX += x
+	p.posY += y
 }
-func (p *Zombie) SetPos(x float64, y float64) {
-	p.posX = x
-	p.posY = y
+
+type Zombie struct {
+	*Actor
+	*Position
 }
-func (p *Zombie) GetPos() (float64, float64) {
-	return p.posX, p.posY
+
+func (z *Zombie) Update() {
+	switch z.Actor.state {
+	case IDLE:
+		if z.Actor.frameCount > 14 {
+			z.Actor.SetFrameCount(0)
+		} else {
+			z.Actor.SetFrameCount(z.Actor.frameCount + 0.2)
+		}
+		break
+	case WALKING:
+		if z.Actor.frameCount > 9 {
+			z.Actor.SetFrameCount(0)
+		} else {
+			z.Actor.SetFrameCount(z.Actor.frameCount + 0.2)
+		}
+		break
+	case ZOMBIE_DEAD:
+		if z.Actor.frameCount > 9 {
+			z.Actor.SetFrameCount(0)
+		} else {
+			z.Actor.SetFrameCount(z.Actor.frameCount + 0.2)
+		}
+		break
+	default:
+		panic("UNKNOWN ZOMBIE STATE!!!")
+	}
 }
-func (p *Zombie) GetState() int {
-	return p.state
-}
-func (p *Zombie) GetFrame() float32 {
-	return p.frame
-}
-func (p *Zombie) GetDirection() float64 {
-	return p.direction
+func NewZombie(posX, posY float64) *Zombie {
+	return &Zombie{
+		&Actor{1, 0, 0},
+		&Position{
+			posX: posX,
+			posY: posY,
+		},
+	}
 }
 
 type Player struct {
-	state     int
-	frame     float32
-	direction float64
-	posX      float64
-	posY      float64
+	*Actor
+	*Position
+	vy      float64
+	jumping bool
+	width   int
+	height  int
 }
 
-func (p *Player) SetState(state int) {
-	p.state = state
-}
-func (p *Player) IncrementFrameCounter() {
-	if p.frame > 9 {
-		p.frame = 0
-	} else {
-		p.frame = p.frame + 0.2
+func NewPlayer(posX, posY float64) *Player {
+	return &Player{
+		&Actor{1, 0, 0},
+		&Position{posX, posY},
+		0,
+		false,
+		74,
+		90,
 	}
 }
-func (p *Player) SetDirection(direction float64) {
-	p.direction = direction
+
+func collision(p *Player, z *Zombie) bool {
+	pX, pY := p.posX, p.posY
+	zX, zY := z.posX, z.posY
+	w, h := float64(p.width), float64(p.height)
+
+	return (pX < zX+w &&
+		pX+w > zX &&
+		pY < zY+h &&
+		pY+h > zY)
 }
-func (p *Player) SetPosX(posX float64) {
-	p.posX = posX
-}
-func (p *Player) SetPosY(posY float64) {
-	p.posY = posY
-}
-func (p *Player) SetPos(x float64, y float64) {
-	p.posX = x
-	p.posY = y
-}
-func (p *Player) GetPos() (float64, float64) {
-	return p.posX, p.posY
-}
-func (p *Player) GetState() int {
-	return p.state
-}
-func (p *Player) GetFrame() float32 {
-	return p.frame
-}
-func (p *Player) GetDirection() float64 {
-	return p.direction
+func (p *Player) Update() {
+	if ebiten.IsKeyPressed(ebiten.KeyLeft) {
+		if p.posX > WINDOW_LIMIT_LEFT {
+			p.Position.Move(-2, 0)
+		}
+		p.SetState(WALKING)
+		p.SetDirection(FACE_LEFT)
+	} else if ebiten.IsKeyPressed(ebiten.KeyRight) {
+		if p.posX < WINDOW_LIMIT_RIGHT {
+			p.Move(2, 0)
+		}
+		p.SetState(WALKING)
+		p.SetDirection(FACE_RIGHT)
+	} else {
+		p.SetState(IDLE)
+	}
+	if ebiten.IsKeyPressed(ebiten.KeyA) {
+		p.SetState(ATTACKING)
+	}
+	if ebiten.IsKeyPressed(ebiten.KeyUp) {
+		if p.jumping == false && p.posY == 150 {
+			p.SetState(JUMPING)
+			p.vy = -6
+			p.jumping = true
+		}
+	}
+	if p.jumping == true && p.vy+p.posY <= 25 {
+		p.vy = 2
+		p.jumping = false
+	}
+	if 0 <= p.posY+p.vy && p.posY+p.vy <= 150 {
+		p.Move(0, p.vy)
+	}
+	// there are 10 frames in all of the animations for the knight model so we don't need fancy logic for this one
+	if p.frameCount > 9 {
+		p.SetFrameCount(0)
+	} else {
+		if p.state == ATTACKING {
+			p.SetFrameCount(p.Actor.frameCount + 0.5)
+		} else {
+			p.SetFrameCount(p.Actor.frameCount + 0.15)
+		}
+	}
 }
 
 type Game struct {
 	p *Player
+	z *Zombie
 }
 
 func (g *Game) Update(*ebiten.Image) error {
-	playerX, _ := g.p.GetPos()
-	if ebiten.IsKeyPressed(ebiten.KeyLeft) {
-		if playerX > WINDOW_LIMIT_LEFT {
-			g.p.SetPosX(playerX - 2)
-		}
-		g.p.SetState(WALKING)
-		g.p.SetDirection(FACE_LEFT)
-	} else if ebiten.IsKeyPressed(ebiten.KeyRight) {
-		if playerX < 206 {
-			g.p.SetPosX(playerX + 2)
-		}
-		g.p.SetState(WALKING)
-		g.p.SetDirection(FACE_RIGHT)
+	if collision(g.p, g.z) == true && g.p.state == ATTACKING {
+		g.z.SetState(ZOMBIE_DEAD)
 	} else {
-		g.p.SetState(IDLE)
+		fmt.Println("NO COLLISION")
 	}
-	frameCounter += 0.2
-	playerState := g.p.GetState()
-	if playerState == WALKING && frameCounter > 9 {
-		frameCounter = 0
-	} else if playerState == IDLE && frameCounter > 9 {
-		frameCounter = 0
-	}
+	g.p.Update()
+	g.z.Update()
 	return nil
 }
-func drawPlayer(screen *ebiten.Image, player *Player, frame int) {
+func drawPlayer(screen *ebiten.Image, player *Player) {
 	op := &ebiten.DrawImageOptions{}
-	state := player.GetState()
+	state := player.Actor.state
+	frame := int(math.Floor(player.Actor.frameCount))
 	w, _ := knightImages[state][frame].Bounds().Dx(), knightImages[state][frame].Bounds().Dy()
-	x, y := player.GetPos()
-	op.GeoM.Scale(player.GetDirection(), 1)
+	//fmt.Println("Width:", w, "Height:", h)
+	x, y := player.posX, player.posY
+	op.GeoM.Scale(float64(player.Actor.direction), 1)
 	op.GeoM.Translate(x+float64(w), y)
 	screen.DrawImage(knightImages[state][frame], op)
 }
-func drawZombie(screen *ebiten.Image, frame int) {
+func drawZombie(screen *ebiten.Image, z *Zombie) {
 	op := &ebiten.DrawImageOptions{}
-	w, _ := zombieImages[0][frame].Bounds().Dx(), zombieImages[0][frame].Bounds().Dy()
+	frame := int(math.Floor(z.frameCount))
+	w, _ := zombieImages[z.state][frame].Bounds().Dx(), zombieImages[z.state][frame].Bounds().Dy()
 	op.GeoM.Scale(1, 1)
-	op.GeoM.Translate(5+float64(w), 150)
-	screen.DrawImage(zombieImages[0][frame], op)
+	op.GeoM.Translate(50+float64(w), 150)
+	screen.DrawImage(zombieImages[z.state][frame], op)
 }
 func (g *Game) Draw(screen *ebiten.Image) {
 	screen.DrawImage(backgroundImage, &ebiten.DrawImageOptions{})
-	drawPlayer(screen, g.p, int(math.Floor(frameCounter)))
-	drawZombie(screen, int(math.Floor(frameCounter)))
+	drawPlayer(screen, g.p)
+	drawZombie(screen, g.z)
 }
 func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeight int) {
 	return 320, 240
@@ -168,8 +218,9 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeigh
 func main() {
 	ebiten.SetWindowSize(640, 480)
 	ebiten.SetWindowTitle("my-first-game")
-	player := &Player{0, 0, 1, 1, 150}
-	game := &Game{player}
+	player := NewPlayer(0, 150)
+	zombie := NewZombie(25, 150)
+	game := &Game{player, zombie}
 	if err := ebiten.RunGame(game); err != nil {
 		panic(err)
 	}
@@ -186,7 +237,7 @@ func init() {
 	// zombie idle
 	var zombieImage *ebiten.Image
 	zombieImages = [][]*ebiten.Image{}
-	zombieImages = append(zombieImages, []*ebiten.Image{}, []*ebiten.Image{})
+	zombieImages = append(zombieImages, []*ebiten.Image{}, []*ebiten.Image{}, []*ebiten.Image{})
 	for i := 1; i < 16; i++ {
 		zombieImage, _, err = ebitenutil.NewImageFromFile(fmt.Sprintf("png/male/idle%d.png", i), ebiten.FilterDefault)
 		if err != nil {
@@ -204,6 +255,14 @@ func init() {
 		}
 		zombieImages[1] = append(zombieImages[1], zombieImage)
 	}
+	for i := 1; i < 11; i++ {
+		zombieImage, _, err = ebitenutil.NewImageFromFile(fmt.Sprintf("png/male/zombie-dead%d.png", i), ebiten.FilterDefault)
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		zombieImages[2] = append(zombieImages[2], zombieImage)
+	}
 	// LOAD KNIGHT FRAMES
 	var knightImage *ebiten.Image
 	knightImages = [][]*ebiten.Image{}
@@ -220,5 +279,17 @@ func init() {
 		knightRun = append(knightRun, knightImage)
 	}
 	knightImages = append(knightImages, knightRun)
+	knightAttack := []*ebiten.Image{}
+	for i := 1; i < 11; i++ {
+		knightImage, _, err = ebitenutil.NewImageFromFile(fmt.Sprintf("png/knight/knight-attack%d.png", i), ebiten.FilterDefault)
+		knightAttack = append(knightAttack, knightImage)
+	}
+	knightImages = append(knightImages, knightAttack)
+	knightJump := []*ebiten.Image{}
+	for i := 1; i < 11; i++ {
+		knightImage, _, err = ebitenutil.NewImageFromFile(fmt.Sprintf("png/knight/knight-jump%d.png", i), ebiten.FilterDefault)
+		knightJump = append(knightJump, knightImage)
+	}
+	knightImages = append(knightImages, knightJump)
 	frameCounter = 1
 }
