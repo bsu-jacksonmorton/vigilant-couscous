@@ -4,19 +4,21 @@ import (
 	"fmt"
 	"log"
 	"math"
+  "time"
 
 	"github.com/hajimehoshi/ebiten"
-	"github.com/hajimehoshi/ebiten/ebitenutil"
+	"github.com/hajimehoshiebiten/ebitenutil"
 	// "github.com/hajimehoshi/ebiten/inpututil"
 )
 
 const (
 	WINDOW_LIMIT_LEFT  float64 = -32
 	WINDOW_LIMIT_RIGHT float64 = 206
+  // Actor States
 	IDLE                       = 0
 	WALKING                    = 1
 	ATTACKING                  = 2
-	JUMPING                    = 3
+	PLAYER_JUMPING                    = 3
 	FACE_LEFT                  = -1
 	FACE_RIGHT                 = 1
 	ZOMBIE_DEAD                = 2
@@ -62,7 +64,7 @@ type Zombie struct {
 }
 
 func (z *Zombie) Update() {
-	switch z.Actor.state {
+	switch z.state {
 	case IDLE:
 		if z.Actor.frameCount > 14 {
 			z.Actor.SetFrameCount(0)
@@ -78,15 +80,18 @@ func (z *Zombie) Update() {
 		}
 		break
 	case ZOMBIE_DEAD:
-		if z.Actor.frameCount > 9 {
-			z.Actor.SetFrameCount(0)
-		} else {
+    if z.frameCount <= 9 {
 			z.Actor.SetFrameCount(z.Actor.frameCount + 0.2)
 		}
 		break
 	default:
 		panic("UNKNOWN ZOMBIE STATE!!!")
 	}
+}
+func (z *Zombie) Kill(){
+  z.state = ZOMBIE_DEAD
+  z.SetFrameCount(0)
+  z.Move(0, 25)
 }
 func NewZombie(posX, posY float64) *Zombie {
 	return &Zombie{
@@ -105,8 +110,12 @@ type Player struct {
 	jumping bool
 	width   int
 	height  int
+  zombiesKilled int
 }
-
+func (p *Player) KillZombie(){
+  p.zombiesKilled += 1
+  fmt.Println("Zombies Killed: ", p.zombiesKilled)
+}
 func NewPlayer(posX, posY float64) *Player {
 	return &Player{
 		&Actor{1, 0, 0},
@@ -115,6 +124,7 @@ func NewPlayer(posX, posY float64) *Player {
 		false,
 		74,
 		90,
+    0,
 	}
 }
 
@@ -149,7 +159,7 @@ func (p *Player) Update() {
 	}
 	if ebiten.IsKeyPressed(ebiten.KeyUp) {
 		if p.jumping == false && p.posY == 150 {
-			p.SetState(JUMPING)
+			p.SetState(PLAYER_JUMPING)
 			p.vy = -6
 			p.jumping = true
 		}
@@ -176,26 +186,28 @@ func (p *Player) Update() {
 type Game struct {
 	p *Player
 	z *Zombie
+  zombies []*Zombie
 }
 
 func (g *Game) Update(*ebiten.Image) error {
-	if collision(g.p, g.z) == true && g.p.state == ATTACKING {
-		g.z.SetState(ZOMBIE_DEAD)
-	} else {
-		fmt.Println("NO COLLISION")
-	}
+  for _, z := range g.zombies {
+	  if collision(g.p, z) == true && g.p.state == ATTACKING && z.state != ZOMBIE_DEAD{
+      z.Kill()
+      g.p.KillZombie()
+	  }
+    z.Update()
+  }
 	g.p.Update()
-	g.z.Update()
 	return nil
 }
 func drawPlayer(screen *ebiten.Image, player *Player) {
 	op := &ebiten.DrawImageOptions{}
-	state := player.Actor.state
-	frame := int(math.Floor(player.Actor.frameCount))
+	state := player.state
+	frame := int(math.Floor(player.frameCount))
 	w, _ := knightImages[state][frame].Bounds().Dx(), knightImages[state][frame].Bounds().Dy()
 	//fmt.Println("Width:", w, "Height:", h)
 	x, y := player.posX, player.posY
-	op.GeoM.Scale(float64(player.Actor.direction), 1)
+	op.GeoM.Scale(float64(player.direction), 1)
 	op.GeoM.Translate(x+float64(w), y)
 	screen.DrawImage(knightImages[state][frame], op)
 }
@@ -204,28 +216,37 @@ func drawZombie(screen *ebiten.Image, z *Zombie) {
 	frame := int(math.Floor(z.frameCount))
 	w, _ := zombieImages[z.state][frame].Bounds().Dx(), zombieImages[z.state][frame].Bounds().Dy()
 	op.GeoM.Scale(1, 1)
-	op.GeoM.Translate(50+float64(w), 150)
+	op.GeoM.Translate(50+float64(w), z.posY)
 	screen.DrawImage(zombieImages[z.state][frame], op)
 }
 func (g *Game) Draw(screen *ebiten.Image) {
 	screen.DrawImage(backgroundImage, &ebiten.DrawImageOptions{})
 	drawPlayer(screen, g.p)
-	drawZombie(screen, g.z)
+  for _, z := range g.zombies {
+    drawZombie(screen, z)
+  }
 }
 func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeight int) {
 	return 320, 240
 }
+
 func main() {
 	ebiten.SetWindowSize(640, 480)
 	ebiten.SetWindowTitle("my-first-game")
 	player := NewPlayer(0, 150)
 	zombie := NewZombie(25, 150)
-	game := &Game{player, zombie}
+	game := &Game{player, zombie, []*Zombie{}}
+  go game.SpawnZombies()
 	if err := ebiten.RunGame(game); err != nil {
 		panic(err)
 	}
 }
 
+func (g *Game) SpawnZombies(){
+  for range time.Tick(time.Second * 5){
+    g.zombies = append(g.zombies, NewZombie(50, 150))
+  }
+}
 func init() {
 	// Load background
 	var err error
