@@ -2,26 +2,26 @@ package main
 
 import (
 	"fmt"
+	"image"
+	_ "image/png"
 	"log"
 	"math"
-  "time"
-
+	"os"
+	"time"
 	"github.com/hajimehoshi/ebiten"
-	"github.com/hajimehoshiebiten/ebitenutil"
-	// "github.com/hajimehoshi/ebiten/inpututil"
 )
 
 const (
 	WINDOW_LIMIT_LEFT  float64 = -32
 	WINDOW_LIMIT_RIGHT float64 = 206
-  // Actor States
-	IDLE                       = 0
-	WALKING                    = 1
-	ATTACKING                  = 2
-	PLAYER_JUMPING                    = 3
-	FACE_LEFT                  = -1
-	FACE_RIGHT                 = 1
-	ZOMBIE_DEAD                = 2
+	// Actor States
+	IDLE           = 0
+	WALKING        = 1
+	ATTACKING      = 2
+	PLAYER_JUMPING = 3
+	FACE_LEFT      = -1
+	FACE_RIGHT     = 1
+	ZOMBIE_DEAD    = 2
 )
 
 var (
@@ -80,7 +80,7 @@ func (z *Zombie) Update() {
 		}
 		break
 	case ZOMBIE_DEAD:
-    if z.frameCount <= 9 {
+		if z.frameCount <= 9 {
 			z.Actor.SetFrameCount(z.Actor.frameCount + 0.2)
 		}
 		break
@@ -88,10 +88,10 @@ func (z *Zombie) Update() {
 		panic("UNKNOWN ZOMBIE STATE!!!")
 	}
 }
-func (z *Zombie) Kill(){
-  z.state = ZOMBIE_DEAD
-  z.SetFrameCount(0)
-  z.Move(0, 25)
+func (z *Zombie) Kill() {
+	z.state = ZOMBIE_DEAD
+	z.SetFrameCount(0)
+	z.Move(0, 25)
 }
 func NewZombie(posX, posY float64) *Zombie {
 	return &Zombie{
@@ -106,15 +106,16 @@ func NewZombie(posX, posY float64) *Zombie {
 type Player struct {
 	*Actor
 	*Position
-	vy      float64
-	jumping bool
-	width   int
-	height  int
-  zombiesKilled int
+	vy            float64
+	jumping       bool
+	width         int
+	height        int
+	zombiesKilled int
 }
-func (p *Player) KillZombie(){
-  p.zombiesKilled += 1
-  fmt.Println("Zombies Killed: ", p.zombiesKilled)
+
+func (p *Player) KillZombie() {
+	p.zombiesKilled += 1
+	fmt.Println("Zombies Killed: ", p.zombiesKilled)
 }
 func NewPlayer(posX, posY float64) *Player {
 	return &Player{
@@ -124,7 +125,7 @@ func NewPlayer(posX, posY float64) *Player {
 		false,
 		74,
 		90,
-    0,
+		0,
 	}
 }
 
@@ -184,19 +185,19 @@ func (p *Player) Update() {
 }
 
 type Game struct {
-	p *Player
-	z *Zombie
-  zombies []*Zombie
+	p       *Player
+	z       *Zombie
+	zombies []*Zombie
 }
 
 func (g *Game) Update(*ebiten.Image) error {
-  for _, z := range g.zombies {
-	  if collision(g.p, z) == true && g.p.state == ATTACKING && z.state != ZOMBIE_DEAD{
-      z.Kill()
-      g.p.KillZombie()
-	  }
-    z.Update()
-  }
+	for _, z := range g.zombies {
+		if collision(g.p, z) == true && g.p.state == ATTACKING && z.state != ZOMBIE_DEAD {
+			z.Kill()
+			g.p.KillZombie()
+		}
+		z.Update()
+	}
 	g.p.Update()
 	return nil
 }
@@ -222,9 +223,9 @@ func drawZombie(screen *ebiten.Image, z *Zombie) {
 func (g *Game) Draw(screen *ebiten.Image) {
 	screen.DrawImage(backgroundImage, &ebiten.DrawImageOptions{})
 	drawPlayer(screen, g.p)
-  for _, z := range g.zombies {
-    drawZombie(screen, z)
-  }
+	for _, z := range g.zombies {
+		drawZombie(screen, z)
+	}
 }
 func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeight int) {
 	return 320, 240
@@ -236,23 +237,38 @@ func main() {
 	player := NewPlayer(0, 150)
 	zombie := NewZombie(25, 150)
 	game := &Game{player, zombie, []*Zombie{}}
-  go game.SpawnZombies()
+	go game.SpawnZombies()
 	if err := ebiten.RunGame(game); err != nil {
 		panic(err)
 	}
 }
 
-func (g *Game) SpawnZombies(){
-  for range time.Tick(time.Second * 5){
-    g.zombies = append(g.zombies, NewZombie(50, 150))
-  }
+func (g *Game) SpawnZombies() {
+	for range time.Tick(time.Second * 5) {
+		g.zombies = append(g.zombies, NewZombie(50, 150))
+	}
+}
+func getImageFromPath(path string) (image.Image, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	image, _, err := image.Decode(f)
+	return image, err
 }
 func init() {
 	// Load background
 	var err error
-	backgroundImage, _, err = ebitenutil.NewImageFromFile("png/test.png", ebiten.FilterDefault)
+	bgImg, err := getImageFromPath("png/test.png")
 	if err != nil {
 		log.Fatal(err)
+    return
+	}
+	backgroundImage, err = ebiten.NewImageFromImage(bgImg, ebiten.FilterDefault)
+	if err != nil {
+		log.Fatal(err)
+    return
 	}
 	// LOAD ZOMBIE FRAMES
 	// zombie idle
@@ -260,7 +276,12 @@ func init() {
 	zombieImages = [][]*ebiten.Image{}
 	zombieImages = append(zombieImages, []*ebiten.Image{}, []*ebiten.Image{}, []*ebiten.Image{})
 	for i := 1; i < 16; i++ {
-		zombieImage, _, err = ebitenutil.NewImageFromFile(fmt.Sprintf("png/male/idle%d.png", i), ebiten.FilterDefault)
+		tmp, err := getImageFromPath(fmt.Sprintf("png/male/idle%d.png", i))
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		zombieImage, err = ebiten.NewImageFromImage(tmp, ebiten.FilterDefault)
 		if err != nil {
 			log.Fatal(err)
 			return
@@ -269,7 +290,12 @@ func init() {
 	}
 	// zombie walk
 	for i := 1; i < 11; i++ {
-		zombieImage, _, err = ebitenutil.NewImageFromFile(fmt.Sprintf("png/male/walk%d.png", i), ebiten.FilterDefault)
+		tmp, err := getImageFromPath(fmt.Sprintf("png/male/walk%d.png", i))
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		zombieImage, err = ebiten.NewImageFromImage(tmp, ebiten.FilterDefault)
 		if err != nil {
 			log.Fatal(err)
 			return
@@ -277,7 +303,12 @@ func init() {
 		zombieImages[1] = append(zombieImages[1], zombieImage)
 	}
 	for i := 1; i < 11; i++ {
-		zombieImage, _, err = ebitenutil.NewImageFromFile(fmt.Sprintf("png/male/zombie-dead%d.png", i), ebiten.FilterDefault)
+		tmp, err := getImageFromPath(fmt.Sprintf("png/male/zombie-dead%d.png", i))
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		zombieImage, err = ebiten.NewImageFromImage(tmp, ebiten.FilterDefault)
 		if err != nil {
 			log.Fatal(err)
 			return
@@ -290,25 +321,45 @@ func init() {
 	// Idle
 	knightIdle := []*ebiten.Image{}
 	for i := 1; i < 11; i++ {
-		knightImage, _, err = ebitenutil.NewImageFromFile(fmt.Sprintf("png/knight/knight-real-idle%d.png", i), ebiten.FilterDefault)
+		tmp, err := getImageFromPath(fmt.Sprintf("png/knight/knight-real-idle%d.png", i))
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		knightImage, err = ebiten.NewImageFromImage(tmp, ebiten.FilterDefault)
 		knightIdle = append(knightIdle, knightImage)
 	}
 	knightImages = append(knightImages, knightIdle)
 	knightRun := []*ebiten.Image{}
 	for i := 1; i < 11; i++ {
-		knightImage, _, err = ebitenutil.NewImageFromFile(fmt.Sprintf("png/knight/knight-run%d.png", i), ebiten.FilterDefault)
+		tmp, err := getImageFromPath(fmt.Sprintf("png/knight/knight-run%d.png", i))
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		knightImage, err = ebiten.NewImageFromImage(tmp, ebiten.FilterDefault)
 		knightRun = append(knightRun, knightImage)
 	}
 	knightImages = append(knightImages, knightRun)
 	knightAttack := []*ebiten.Image{}
 	for i := 1; i < 11; i++ {
-		knightImage, _, err = ebitenutil.NewImageFromFile(fmt.Sprintf("png/knight/knight-attack%d.png", i), ebiten.FilterDefault)
+		tmp, err := getImageFromPath(fmt.Sprintf("png/knight/knight-attack%d.png", i))
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		knightImage, err = ebiten.NewImageFromImage(tmp, ebiten.FilterDefault)
 		knightAttack = append(knightAttack, knightImage)
 	}
 	knightImages = append(knightImages, knightAttack)
 	knightJump := []*ebiten.Image{}
 	for i := 1; i < 11; i++ {
-		knightImage, _, err = ebitenutil.NewImageFromFile(fmt.Sprintf("png/knight/knight-jump%d.png", i), ebiten.FilterDefault)
+		tmp, err := getImageFromPath(fmt.Sprintf("png/knight/knight-jump%d.png", i))
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		knightImage, err = ebiten.NewImageFromImage(tmp, ebiten.FilterDefault)
 		knightJump = append(knightJump, knightImage)
 	}
 	knightImages = append(knightImages, knightJump)
